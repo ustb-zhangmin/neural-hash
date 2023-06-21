@@ -7,24 +7,45 @@ import numpy as np
 import hashlib
 import random
 import matplotlib.pyplot as plt
+import torchvision
 # Define the neural network model
+
 class HashFunction(nn.Module):
     def __init__(self):
         super(HashFunction, self).__init__()
-        self.fc1 = nn.Linear(512, 1024)
-        self.bn1 = nn.BatchNorm1d(1024)
-        self.fc2 = nn.Linear(1024, 512)
-        self.bn2 = nn.BatchNorm1d(512)
-        self.fc3 = nn.Linear(512, 256)
-        self.bn3 = nn.BatchNorm1d(256)
-        self.fc4 = nn.Linear(256, 128)
+        
+        self.conv1=nn.Sequential(
+            nn.Conv1d(64,512,2),
+            nn.ReLU(),
+            nn.Conv1d(512,256,2),
+            nn.ReLU(),
+            nn.Conv1d(256,128,2),
+            nn.ReLU(),
+            nn.MaxPool1d(5)
+        )
+
+        self.Lin = nn.Sequential(
+            nn.Linear(128, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            
+            #nn.BatchNorm1d(128),
+            #nn.ReLU(),
+            #nn.Linear(128, 64),
+            #nn.ReLU(),
+            #nn.Linear(64, 128),
+            
+            nn.Sigmoid(),
+        )
 
     def forward(self, x):
-        x = torch.relu(self.bn1(self.fc1(x)))
-        x = torch.relu(self.bn2(self.fc2(x)))
-        x = torch.relu(self.bn3(self.fc3(x)))
-        x = torch.sigmoid((self.fc4(x)))
-
+        x = self.conv1(x)
+        x = x.view(len(x), -1)
+        x = self.Lin(x)
         return x
 
 
@@ -41,20 +62,16 @@ class HashDataset(Dataset):
         return self.data1[idx],self.data2[idx]
 
 # Contrastive loss
-class ContrastiveLoss(nn.Module):
-    def __init__(self, margin):
-        super(ContrastiveLoss, self).__init__()
-        self.margin = margin
-
+class MSELoss(nn.Module):
+    def __init__(self):
+        super(MSELoss, self).__init__()
     def forward(self, output1, output2):
-        euclidean_distance = torch.pairwise_distance(output1, output2)
-        #loss_contrastive = torch.mean(torch.relu(self.margin - euclidean_distance))
-        loss_contrastive = torch.mean(torch.pow(torch.clamp(self.margin - euclidean_distance, min=0.0), 2))
-        #loss_contrastive = torch.mean((1 - label) * torch.pow(euclidean_distance, 2) + label * torch.pow(torch.clamp(self.margin - euclidean_distance, min=0.0), 2))
-        return loss_contrastive
+        loss_mse = torch.mean(1 - torch.nn.MSELoss(reduction='mean')(output1,output2))
+
+        return loss_mse
 
 
-train_num, test_num = 390000, 10000
+train_num, test_num = 690000, 10000
 data_path = 'data.npy'
 
 # load data
@@ -72,13 +89,13 @@ train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 model = HashFunction().to(device)
-optimizer = optim.Adam(model.parameters(), lr=0.001)
 #optimizer = optim.SGD(model.parameters(), lr=0.001)
-margin = 128
-criterion = ContrastiveLoss(margin)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+criterion = MSELoss()
 
 # Train the model
-num_epochs = 100
+num_epochs = 50
 test_data = data[train_num:].to(device)
 s_test_data = similar_data[train_num:].to(device)
 threshold = 10
@@ -117,6 +134,7 @@ for epoch in range(num_epochs):
         dist_list.append(avg_distance)
         rate.append(qualified/test_num)
         print(f"Average Euclidean distance: {avg_distance}, Rate of pass: {qualified/test_num}")
+
 plt.figure(figsize=(18,6))
 
 plt.subplot(1, 3, 1)
@@ -144,4 +162,5 @@ plt.grid(color='k', linestyle=':')
 plt.legend()
 
 plt.imshow
-plt.show() 
+plt.show()      
+        
